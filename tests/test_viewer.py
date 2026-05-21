@@ -62,34 +62,3 @@ def test_csv_renders_html_table_with_polars(tmp_path: Path) -> None:
     assert "2 rows" in html
     assert "2 cols" in html
 
-
-def test_ipynb_walks_cells_and_keeps_outputs(tmp_path: Path) -> None:
-    nb = {
-        "cells": [
-            {"cell_type": "markdown", "source": ["# title\n"]},
-            {
-                "cell_type": "code",
-                "execution_count": 4,
-                "source": ["x = 1\n"],
-                "outputs": [
-                    {"output_type": "stream", "name": "stdout", "text": ["hello\n"]},
-                    {
-                        "output_type": "execute_result",
-                        "data": {"text/plain": "42"},
-                        "metadata": {},
-                    },
-                ],
-            },
-        ],
-        "metadata": {},
-        "nbformat": 4,
-        "nbformat_minor": 5,
-    }
-    f = tmp_path / "nb.ipynb"
-    f.write_text(json.dumps(nb))
-    snap = viewer.render(f)
-    assert [c["kind"] for c in snap["cells"]] == ["markdown", "code"]
-    code = snap["cells"][1]
-    assert code["execution_count"] == 4
-    types = [o["type"] for o in code["outputs"]]
-    assert types == ["stream", "display"]

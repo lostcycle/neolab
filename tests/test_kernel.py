@@ -79,3 +79,48 @@ async def test_filekernel_basic_flow():
         assert [s["state"] for s in statuses] == ["busy", "idle"]
     finally:
         k.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_filekernel_instances_are_isolated():
+    loop = asyncio.get_running_loop()
+    left: list[dict] = []
+    right: list[dict] = []
+    k1 = FileKernel(Path("/left.py"), left.append, loop)
+    k2 = FileKernel(Path("/right.py"), right.append, loop)
+    try:
+        k1.execute("l1", "x = 'left'")
+        k2.execute("r1", "x = 'right'")
+        await _wait_done(left, "l1")
+        await _wait_done(right, "r1")
+
+        k1.execute("l2", "print(x)")
+        k2.execute("r2", "print(x)")
+        await _wait_done(left, "l2")
+        await _wait_done(right, "r2")
+
+        assert "left" in _stream_text(left, "l2")
+        assert "right" in _stream_text(right, "r2")
+    finally:
+        k1.shutdown()
+        k2.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_filekernel_emits_inline_matplotlib_figure():
+    pytest.importorskip("matplotlib")
+    loop = asyncio.get_running_loop()
+    received: list[dict] = []
+    k = FileKernel(Path("/plot.py"), received.append, loop)
+    try:
+        k.execute(
+            "plot1",
+            "import matplotlib.pyplot as plt\n"
+            "plt.figure()\n"
+            "plt.plot([1, 2, 3])\n",
+        )
+        await _wait_done(received, "plot1")
+        displays = [m for m in received if m["type"] in {"display", "result"}]
+        assert any("image/png" in m.get("data", {}) for m in displays), displays
+    finally:
+        k.shutdown()

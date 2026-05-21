@@ -21,15 +21,6 @@ from neolab.workspace import Workspace
 log = logging.getLogger(__name__)
 
 
-def _wire_cell(c: dict[str, str]) -> dict[str, Any]:
-    """Browser-facing shape for a synced cell. Markdown carries source so it
-    can be rendered without a kernel run; code keeps source server-side."""
-    view: dict[str, Any] = {"kind": c["kind"]}
-    if c["kind"] == "markdown":
-        view["source"] = c.get("source", "")
-    return view
-
-
 class Executor:
     def __init__(
         self,
@@ -40,9 +31,7 @@ class Executor:
         self.workspace = workspace
         self.broadcast = broadcast
         self.loop = loop
-        # P1: a single kernel. P2 will key by Path.
-        self._kernel: FileKernel | None = None
-        self._kernel_path: Path | None = None
+        self._kernels: dict[Path, FileKernel] = {}
         self._runs: dict[str, tuple[Path, int]] = {}
         self.active_path: Path | None = None
         self._disk_watcher: DiskWatcher | None = None
@@ -52,9 +41,9 @@ class Executor:
         watcher.set_callback(self._on_disk_change)
 
     def shutdown(self) -> None:
-        if self._kernel is not None:
-            self._kernel.shutdown()
-            self._kernel = None
+        for kernel in self._kernels.values():
+            kernel.shutdown()
+        self._kernels = {}
 
     # ------------ commands ------------
 
@@ -63,13 +52,8 @@ class Executor:
         self.active_path = path
         if self._disk_watcher is not None:
             self._disk_watcher.track(path)
-        self.broadcast.publish(
-            {
-                "type": "file_synced",
-                "path": str(path),
-                "cells": [_wire_cell(c) for c in cells],
-            }
-        )
+        snap = self.workspace.snapshot(path)
+        self.broadcast.publish({"type": "file_synced", **snap})
 
     def execute_cell(self, path: Path, cell_index: int) -> None:
         kind = self.workspace.get_cell_kind(path, cell_index)
@@ -94,9 +78,53 @@ class Executor:
         )
         kernel.execute(run_id, source)
 
+    def execute_cells(self, path: Path, cell_indices: list[int]) -> None:
+        for cell_index in cell_indices:
+            self.execute_cell(path, cell_index)
+
+    def execute_source(self, path: Path, source: str, cell_index: int) -> None:
+        if not source.strip():
+            return
+        if self.workspace.get_cell_source(path, cell_index) is None:
+            log.warning("execute_source: no target cell at %s[%d]", path, cell_index)
+            return
+        kernel = self._get_or_spawn(path)
+        run_id = uuid.uuid4().hex
+        self._runs[run_id] = (path, cell_index)
+        self.workspace.reset_cell_outputs(path, cell_index)
+        self.workspace.set_cell_status(path, cell_index, "running")
+        self.broadcast.publish(
+            {
+                "type": "cell_started",
+                "path": str(path),
+                "cell_index": cell_index,
+                "run_id": run_id,
+            }
+        )
+        kernel.execute(run_id, source)
+
     def clear_outputs(self, path: Path) -> None:
         self.workspace.clear_outputs(path)
         self.broadcast.publish({"type": "outputs_cleared", "path": str(path)})
+
+    def execute_stale(self, path: Path) -> None:
+        self.execute_cells(path, self.workspace.stale_code_indices(path))
+
+    def interrupt_kernel(self, path: Path) -> None:
+        kernel = self._kernels.get(path)
+        if kernel is None:
+            return
+        kernel.interrupt()
+
+    def restart_kernel(self, path: Path) -> None:
+        kernel = self._kernels.get(path)
+        if kernel is not None:
+            kernel.restart()
+        self.workspace.mark_code_cells_stale(path)
+        self.workspace.set_kernel_status(path, "idle")
+        snap = self.workspace.snapshot(path)
+        self.broadcast.publish({"type": "kernel_status", "path": str(path), "state": "idle"})
+        self.broadcast.publish({"type": "file_synced", **snap})
 
     def update_cursor(self, path: Path, cell_index: int) -> None:
         self.active_path = path
@@ -115,11 +143,9 @@ class Executor:
     # ------------ kernel lifecycle ------------
 
     def _get_or_spawn(self, path: Path) -> FileKernel:
-        if self._kernel is None:
-            self._kernel = FileKernel(path, self._on_kernel_event, self.loop)
-            self._kernel_path = path
-        # P1: one kernel total. Cells across files (P2) will spawn per Path.
-        return self._kernel
+        if path not in self._kernels:
+            self._kernels[path] = FileKernel(path, self._on_kernel_event, self.loop)
+        return self._kernels[path]
 
     # ------------ disk watcher ------------
 
@@ -152,8 +178,10 @@ class Executor:
         et = ev["type"]
         msg_id = ev.get("msg_id")
         if et == "status":
-            path = self._kernel_path
+            path_s = ev.get("path")
+            path = Path(path_s) if path_s else None
             if path is not None:
+                self.workspace.set_kernel_status(path, ev["state"])
                 self.broadcast.publish(
                     {
                         "type": "kernel_status",

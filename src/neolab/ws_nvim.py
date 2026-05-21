@@ -68,7 +68,7 @@ async def ws_nvim_handler(request: web.Request) -> web.WebSocketResponse:
 
 def _to_nvim(ev: dict[str, Any]) -> dict[str, Any] | None:
     et = ev.get("type")
-    if et in ("cell_started", "cell_finished", "kernel_status"):
+    if et in ("cell_started", "cell_finished", "kernel_status", "outputs_cleared", "file_synced"):
         return ev
     if et == "cell_output":
         out = ev.get("output", {})
@@ -79,6 +79,7 @@ def _to_nvim(ev: dict[str, Any]) -> dict[str, Any] | None:
                 "cell_index": ev["cell_index"],
                 "ename": out.get("ename", ""),
                 "evalue": out.get("evalue", ""),
+                "traceback": out.get("traceback", []),
             }
     return None
 
@@ -91,8 +92,22 @@ async def _handle(data: dict[str, Any], executor: Executor, ws: web.WebSocketRes
         executor.sync_file(Path(data["path"]), data.get("cells", []))
     elif t == "execute_cell":
         executor.execute_cell(Path(data["path"]), int(data["cell_index"]))
+    elif t == "execute_cells":
+        executor.execute_cells(Path(data["path"]), [int(i) for i in data.get("cell_indices", [])])
+    elif t == "execute_source":
+        executor.execute_source(
+            Path(data["path"]),
+            str(data.get("source", "")),
+            int(data.get("cell_index", 0)),
+        )
+    elif t == "execute_stale":
+        executor.execute_stale(Path(data["path"]))
     elif t == "clear_outputs":
         executor.clear_outputs(Path(data["path"]))
+    elif t == "interrupt_kernel":
+        executor.interrupt_kernel(Path(data["path"]))
+    elif t == "restart_kernel":
+        executor.restart_kernel(Path(data["path"]))
     elif t == "cursor":
         executor.update_cursor(Path(data["path"]), int(data["cell_index"]))
     elif t == "tree":

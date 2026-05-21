@@ -7,6 +7,14 @@ local defaults = {
   },
   keymaps = {
     execute_cell = "<leader>r",
+    execute_cell_and_advance = "<leader>j",
+    execute_selection = "<leader>rs",
+    execute_all = "<leader>ra",
+    execute_above = "<leader>rA",
+    execute_below = "<leader>rb",
+    execute_stale = "<leader>rt",
+    interrupt_kernel = "<leader>ri",
+    restart_kernel = "<leader>rk",
     clear_outputs = "<leader>R",
   },
   render = {

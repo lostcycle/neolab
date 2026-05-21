@@ -4,12 +4,22 @@ import { WS } from "./ws.js";
 import { renderCell } from "./cell.js";
 import { renderTree, setActiveFile } from "./tree.js";
 
+function loadCollapsedCells() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem("neolab.cells.collapsed") || "[]"));
+  } catch {
+    return new Set();
+  }
+}
+
 const state = {
   activePath: null,
   cells: [], // [{ kind, source, outputs, status, execution_count, stale }]
   tree: null, // { root, nodes }
   activeCellIndex: null,
   kernelStatus: "idle",
+  collapsed: loadCollapsedCells(),
+  searchQuery: "",
 };
 
 const $path = document.getElementById("path");
@@ -17,6 +27,7 @@ const $kstat = document.getElementById("kernel-status");
 const $cells = document.getElementById("cells");
 const $tree = document.getElementById("tree");
 const $treeRoot = document.getElementById("tree-root");
+const $search = document.getElementById("output-search");
 
 function newCell(c) {
   return {
@@ -26,6 +37,7 @@ function newCell(c) {
     status: c.status || "idle",
     execution_count: c.execution_count ?? null,
     stale: !!c.stale,
+    source_hash: c.source_hash || null,
   };
 }
 
@@ -53,7 +65,15 @@ function renderAll() {
     empty.textContent = "No cells yet — open a file in Neovim.";
     $cells.appendChild(empty);
   } else {
-    state.cells.forEach((cell, i) => renderCell($cells, i, cell));
+    state.cells.forEach((cell, i) => {
+      const card = renderCell($cells, i, cell, {
+        collapsed: isCollapsed(i),
+        onToggleCollapse: toggleCollapsed,
+      });
+      if (state.searchQuery && !card.textContent.toLowerCase().includes(state.searchQuery)) {
+        card.classList.add("search-hidden");
+      }
+    });
     applyActiveCellHighlight();
   }
 }
@@ -70,6 +90,26 @@ function scrollToCell(index) {
   applyActiveCellHighlight();
   const target = $cells.querySelector(`.cell[data-cell-index="${index}"]`);
   if (target) target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function cellKey(index) {
+  return `${state.activePath || ""}#${index}`;
+}
+
+function saveCollapsed() {
+  localStorage.setItem("neolab.cells.collapsed", JSON.stringify([...state.collapsed]));
+}
+
+function isCollapsed(index) {
+  return state.collapsed.has(cellKey(index));
+}
+
+function toggleCollapsed(index) {
+  const key = cellKey(index);
+  if (state.collapsed.has(key)) state.collapsed.delete(key);
+  else state.collapsed.add(key);
+  saveCollapsed();
+  renderAll();
 }
 
 function renderTreeNow() {
@@ -93,15 +133,16 @@ function mergeIncomingCells(incoming) {
     if (
       prior &&
       prior.kind === c.kind &&
-      (c.kind === "markdown" || prior.source === (c.source || ""))
+      (prior.source_hash == null || prior.source_hash === (c.source_hash || null))
     ) {
       return {
         kind: c.kind,
         source: c.source || prior.source || "",
-        outputs: prior.outputs,
-        status: prior.status,
-        execution_count: prior.execution_count,
-        stale: prior.stale,
+        outputs: c.outputs || prior.outputs,
+        status: c.status || prior.status,
+        execution_count: c.execution_count ?? prior.execution_count,
+        stale: !!c.stale,
+        source_hash: c.source_hash || prior.source_hash || null,
       };
     }
     return newCell(c);
@@ -141,6 +182,7 @@ function applyEvent(ev) {
       return;
     }
     case "cell_output": {
+      if (ev.path && state.activePath !== ev.path) return;
       ensureCell(ev.cell_index);
       state.cells[ev.cell_index].outputs.push(ev.output);
       renderAll();
@@ -183,4 +225,34 @@ function applyEvent(ev) {
 const ws = new WS(`ws://${location.host}/api/browser`, {
   onOpen: () => ws.send({ type: "hello" }),
   onMessage: applyEvent,
+});
+
+$search.addEventListener("input", () => {
+  state.searchQuery = $search.value.trim().toLowerCase();
+  renderAll();
+});
+
+document.addEventListener("keydown", (e) => {
+  const tag = document.activeElement?.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+    if (e.key === "Escape") document.activeElement.blur();
+    return;
+  }
+  if (e.key === "/") {
+    e.preventDefault();
+    $search.focus();
+    return;
+  }
+  if (state.cells.length === 0) return;
+  const current = state.activeCellIndex ?? 0;
+  if (e.key === "j") {
+    e.preventDefault();
+    scrollToCell(Math.min(state.cells.length - 1, current + 1));
+  } else if (e.key === "k") {
+    e.preventDefault();
+    scrollToCell(Math.max(0, current - 1));
+  } else if (e.key === "c") {
+    e.preventDefault();
+    toggleCollapsed(current);
+  }
 });

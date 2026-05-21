@@ -111,6 +111,43 @@ async def test_execute_cell_nvim_receives_status_events(cli):
         assert "cell_output" not in types
 
 
+async def test_execute_cells_runs_in_order(cli):
+    async with cli.ws_connect("/api/nvim") as nvim, cli.ws_connect("/api/browser") as browser:
+        await nvim.send_json({"type": "hello"})
+        await asyncio.wait_for(nvim.receive_json(), timeout=2)
+        await browser.send_json({"type": "hello"})
+        await asyncio.wait_for(browser.receive_json(), timeout=2)
+
+        await nvim.send_json(
+            {
+                "type": "file_synced",
+                "path": "/multi.py",
+                "cells": [
+                    {"kind": "code", "source": "x = 40"},
+                    {"kind": "code", "source": "print(x + 2)"},
+                ],
+            }
+        )
+        await nvim.send_json(
+            {
+                "type": "execute_cells",
+                "path": "/multi.py",
+                "cell_indices": [0, 1],
+            }
+        )
+
+        events = await _drain_until(
+            browser,
+            lambda m: m.get("type") == "cell_finished" and m.get("cell_index") == 1,
+        )
+        streams_text = "".join(
+            e["output"]["text"]
+            for e in events
+            if e["type"] == "cell_output" and e["output"].get("type") == "stream"
+        )
+        assert "42" in streams_text
+
+
 async def test_clear_outputs(cli):
     async with cli.ws_connect("/api/nvim") as nvim, cli.ws_connect("/api/browser") as browser:
         await nvim.send_json({"type": "hello"})

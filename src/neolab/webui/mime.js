@@ -39,20 +39,31 @@ function renderOne(mime, content) {
       const wrap = document.createElement("div");
       wrap.className = "rich-html";
       wrap.innerHTML = content;
+      enhanceTables(wrap);
       return wrap;
     }
     case "image/svg+xml": {
-      const wrap = document.createElement("div");
-      wrap.className = "rich-svg";
-      wrap.innerHTML = content;
-      return wrap;
+      return mediaFrame({
+        mime,
+        content,
+        className: "rich-svg",
+        render: (body) => {
+          body.innerHTML = content;
+        },
+      });
     }
     case "image/png":
     case "image/jpeg": {
       const img = document.createElement("img");
       img.className = "rich-img";
       img.src = `data:${mime};base64,${content}`;
-      return img;
+      return mediaFrame({
+        mime,
+        content,
+        className: "rich-image-frame",
+        render: (body) => body.appendChild(img),
+        dataUrl: img.src,
+      });
     }
     case "text/markdown": {
       const div = document.createElement("div");
@@ -82,4 +93,92 @@ function renderOne(mime, content) {
     default:
       return null;
   }
+}
+
+function mediaFrame({ mime, content, className, render, dataUrl }) {
+  const frame = document.createElement("figure");
+  frame.className = "media-frame " + className;
+  const toolbar = document.createElement("figcaption");
+  toolbar.className = "media-toolbar";
+  const body = document.createElement("div");
+  body.className = "media-body";
+  render(body);
+
+  const url =
+    dataUrl || `data:${mime};charset=utf-8,${encodeURIComponent(String(content))}`;
+  toolbar.appendChild(actionButton("zoom", () => frame.classList.toggle("zoomed")));
+  toolbar.appendChild(actionButton("open", () => window.open(url, "_blank", "noopener")));
+  toolbar.appendChild(actionButton("save", () => {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = mime === "image/svg+xml" ? "neolab-output.svg" : "neolab-output.png";
+    a.click();
+  }));
+  toolbar.appendChild(actionButton("copy", async () => {
+    if (!navigator.clipboard || !window.ClipboardItem) return;
+    const blob = await (await fetch(url)).blob();
+    await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+  }));
+  frame.appendChild(toolbar);
+  frame.appendChild(body);
+  return frame;
+}
+
+function actionButton(label, onClick) {
+  const button = document.createElement("button");
+  button.className = "mime-action";
+  button.type = "button";
+  button.textContent = label;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function enhanceTables(root) {
+  root.querySelectorAll("table").forEach((table) => {
+    const toolbar = document.createElement("div");
+    toolbar.className = "table-toolbar";
+    const filter = document.createElement("input");
+    filter.type = "search";
+    filter.placeholder = "filter rows";
+    filter.className = "table-filter";
+    toolbar.appendChild(filter);
+    table.parentNode.insertBefore(toolbar, table);
+
+    const body = table.tBodies[0];
+    if (!body) return;
+    const rows = () => Array.from(body.rows);
+    filter.addEventListener("input", () => {
+      const q = filter.value.trim().toLowerCase();
+      rows().forEach((row) => {
+        row.style.display = !q || row.textContent.toLowerCase().includes(q) ? "" : "none";
+      });
+    });
+
+    table.querySelectorAll("thead th").forEach((th, idx) => {
+      th.tabIndex = 0;
+      th.title = "Sort column";
+      th.addEventListener("click", () => sortTable(body, idx, th));
+      th.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          sortTable(body, idx, th);
+        }
+      });
+    });
+  });
+}
+
+function sortTable(body, idx, th) {
+  const dir = th.dataset.sortDir === "asc" ? "desc" : "asc";
+  th.dataset.sortDir = dir;
+  const sign = dir === "asc" ? 1 : -1;
+  const sorted = Array.from(body.rows).sort((a, b) => {
+    const av = a.cells[idx]?.textContent.trim() || "";
+    const bv = b.cells[idx]?.textContent.trim() || "";
+    const an = Number(av.replaceAll(",", ""));
+    const bn = Number(bv.replaceAll(",", ""));
+    if (!Number.isNaN(an) && !Number.isNaN(bn)) return (an - bn) * sign;
+    return av.localeCompare(bv) * sign;
+  });
+  sorted.forEach((row) => body.appendChild(row));
 }

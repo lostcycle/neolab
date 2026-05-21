@@ -5,6 +5,7 @@ local client = require("neolab.client")
 local commands = require("neolab.commands")
 local config = require("neolab.config")
 local keymaps = require("neolab.keymaps")
+local status = require("neolab.status")
 local sync = require("neolab.sync")
 
 local _attached = {} ---@type table<integer, boolean>
@@ -17,6 +18,7 @@ local function attach(buf)
   keymaps.apply(buf)
   sync.attach(buf)
   cellmarks.attach(buf)
+  status.attach(buf)
 end
 
 ---@param opts table|nil
@@ -24,6 +26,7 @@ function M.setup(opts)
   config.apply(opts or {})
   commands.register()
   cellmarks.setup()
+  status.setup()
 
   vim.api.nvim_create_autocmd("FileType", {
     pattern = "python",

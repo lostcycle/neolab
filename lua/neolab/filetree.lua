@@ -28,7 +28,6 @@ local VIEWABLE_EXTS = {
   "csv",
   "tsv",
   "parquet",
-  "ipynb",
   "json",
   "yaml",
   "yml",

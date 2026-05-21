@@ -4,10 +4,11 @@
 import { renderMime } from "./mime.js";
 import { renderMarkdown } from "./md.js";
 
-export function renderCell(container, index, cell) {
+export function renderCell(container, index, cell, options = {}) {
   const card = document.createElement("section");
   card.className = "cell cell-" + (cell.status || "idle");
   if (cell.stale) card.classList.add("stale");
+  if (options.collapsed) card.classList.add("collapsed");
   if (cell.kind === "markdown") card.classList.add("cell-markdown");
   card.dataset.cellIndex = String(index);
 
@@ -32,8 +33,19 @@ export function renderCell(container, index, cell) {
 
   const status = document.createElement("span");
   status.className = "cell-status";
-  status.textContent = cell.kind === "markdown" ? "md" : cell.status || "idle";
+  status.textContent = cell.stale ? "stale" : cell.kind === "markdown" ? "md" : cell.status || "idle";
   header.appendChild(status);
+
+  const collapse = document.createElement("button");
+  collapse.className = "cell-action";
+  collapse.type = "button";
+  collapse.textContent = options.collapsed ? "show" : "hide";
+  collapse.title = "Collapse or expand this cell";
+  collapse.addEventListener("click", (e) => {
+    e.stopPropagation();
+    options.onToggleCollapse?.(index);
+  });
+  header.appendChild(collapse);
 
   card.appendChild(header);
 
@@ -70,7 +82,7 @@ function stripAnsi(s) {
   return s.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
-function renderOutput(container, output) {
+export function renderOutput(container, output) {
   switch (output.type) {
     case "stream": {
       const last = container.lastElementChild;

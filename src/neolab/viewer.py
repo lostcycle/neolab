@@ -34,8 +34,6 @@ def render(path: Path) -> dict[str, Any]:
             return _csv(path, separator="\t" if suffix == ".tsv" else ",")
         if suffix == ".parquet":
             return _parquet(path)
-        if suffix == ".ipynb":
-            return _ipynb(path)
         if suffix == ".json":
             return _json(path)
         return _text(path)
@@ -86,27 +84,6 @@ def _json(path: Path) -> dict[str, Any]:
     return _wrap(path, [cell])
 
 
-def _ipynb(path: Path) -> dict[str, Any]:
-    nb = json.loads(_read_text(path))
-    cells: list[dict[str, Any]] = []
-    for c in nb.get("cells", []):
-        ct = c.get("cell_type")
-        src = "".join(c.get("source", []))
-        if ct == "markdown":
-            cells.append(_viewer_cell(kind="markdown", source=src, outputs=[]))
-        elif ct == "code":
-            outs = _convert_ipynb_outputs(c.get("outputs", []))
-            cells.append(
-                _viewer_cell(
-                    kind="code",
-                    outputs=outs,
-                    execution_count=c.get("execution_count"),
-                )
-            )
-        # raw cells are skipped — they have no clean output mapping
-    return _wrap(path, cells)
-
-
 def _text(path: Path) -> dict[str, Any]:
     text = _read_text(path)
     cell = _viewer_cell(
@@ -143,35 +120,6 @@ def _df_cell(df: Any, path: Path) -> dict[str, Any]:
         kind="code",
         outputs=[{"type": "display", "data": {"text/html": note_html + body}, "metadata": {}}],
     )
-
-
-def _convert_ipynb_outputs(out_list: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    converted: list[dict[str, Any]] = []
-    for o in out_list:
-        ot = o.get("output_type")
-        if ot == "stream":
-            txt = o.get("text", "")
-            if isinstance(txt, list):
-                txt = "".join(txt)
-            converted.append({"type": "stream", "name": o.get("name", "stdout"), "text": txt})
-        elif ot in ("execute_result", "display_data"):
-            converted.append(
-                {
-                    "type": "display",
-                    "data": o.get("data", {}),
-                    "metadata": o.get("metadata", {}),
-                }
-            )
-        elif ot == "error":
-            converted.append(
-                {
-                    "type": "error",
-                    "ename": o.get("ename", ""),
-                    "evalue": o.get("evalue", ""),
-                    "traceback": list(o.get("traceback", [])),
-                }
-            )
-    return converted
 
 
 def _read_text(path: Path) -> str:

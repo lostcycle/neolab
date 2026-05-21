@@ -13,6 +13,7 @@ cadence this is cheap and reliable across platforms.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import Callable
 from pathlib import Path
@@ -59,10 +60,18 @@ class DiskWatcher:
         if self._task is None:
             self._task = self._loop.create_task(self._run(), name="neolab-disk-watcher")
 
-    def stop(self) -> None:
+    def stop(self) -> asyncio.Task | None:
+        task = self._task
         if self._task is not None:
             self._task.cancel()
             self._task = None
+        return task
+
+    async def close(self) -> None:
+        task = self.stop()
+        if task is not None:
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
 
     async def _run(self) -> None:
         try:

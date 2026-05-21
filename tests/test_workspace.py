@@ -36,6 +36,20 @@ def test_sync_marks_changed_cells_stale():
     assert ws.file(p).cells[0].outputs[0]["text"] == "old\n"
 
 
+def test_sync_marks_downstream_code_cells_stale():
+    ws = Workspace()
+    p = Path("/t.py")
+    ws.sync_cells(p, _cells(("code", "x = 1"), ("code", "x + 1"), ("markdown", "note")))
+    ws.append_output(p, 0, {"type": "stream", "name": "stdout", "text": "old 1\n"})
+    ws.append_output(p, 1, {"type": "stream", "name": "stdout", "text": "old 2\n"})
+    ws.sync_cells(p, _cells(("code", "x = 2"), ("code", "x + 1"), ("markdown", "note")))
+    fr = ws.file(p)
+    assert fr.cells[0].stale is True
+    assert fr.cells[1].stale is True
+    assert fr.cells[2].stale is False
+    assert ws.stale_code_indices(p) == [0, 1]
+
+
 def test_sync_drops_trailing_cells():
     ws = Workspace()
     p = Path("/t.py")

@@ -36,7 +36,7 @@ async def _on_startup(app: web.Application) -> None:
 async def _on_cleanup(app: web.Application) -> None:
     watcher: DiskWatcher | None = app.get("disk_watcher")
     if watcher is not None:
-        watcher.stop()
+        await watcher.close()
     executor: Executor | None = app.get("executor")
     if executor is not None:
         executor.shutdown()
@@ -64,4 +64,4 @@ def build_app() -> web.Application:
 def run(host: str, port: int) -> None:
     app = build_app()
     log.info("neolab listening at http://%s:%d", host, port)
-    web.run_app(app, host=host, port=port, print=None)
+    web.run_app(app, host=host, port=port, print=None, shutdown_timeout=2.0)

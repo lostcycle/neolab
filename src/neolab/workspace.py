@@ -55,12 +55,15 @@ class Workspace:
 
         For each new cell at index ``i``, if the prior cell at ``i`` has the
         same ``kind`` and source hash, its outputs and status carry over.
-        Otherwise outputs at index ``i`` are kept but marked ``stale``.
-        Cells beyond the new length are dropped.
+        Otherwise outputs at index ``i`` are kept but marked ``stale``. When a
+        code cell changes, downstream executed code cells are also marked stale
+        because their result may depend on the edited state. Cells beyond the
+        new length are dropped.
         """
         fr = self.file(path)
         old = fr.cells
         new: list[CellRecord] = []
+        first_changed_code_idx: int | None = None
         for i, c in enumerate(cells):
             kind = c["kind"]
             source = c["source"]
@@ -72,8 +75,22 @@ class Workspace:
                 record.stale = False
             elif i < len(old):
                 record.outputs = old[i].outputs
+                record.execution_count = old[i].execution_count
+                record.status = old[i].status
                 record.stale = True
+                if first_changed_code_idx is None and (kind == "code" or old[i].kind == "code"):
+                    first_changed_code_idx = i
+            elif first_changed_code_idx is None and kind == "code":
+                first_changed_code_idx = i
             new.append(record)
+
+        if len(old) != len(cells) and first_changed_code_idx is None:
+            first_changed_code_idx = min(len(old), len(cells))
+
+        if first_changed_code_idx is not None:
+            for c in new[first_changed_code_idx:]:
+                if c.kind == "code" and _has_visible_state(c):
+                    c.stale = True
         fr.cells = new
 
     def get_cell_source(self, path: Path, cell_index: int) -> str | None:
@@ -116,6 +133,20 @@ class Workspace:
             c.status = "idle"
             c.stale = False
 
+    def mark_code_cells_stale(self, path: Path) -> None:
+        fr = self._files.get(path)
+        if fr is None:
+            return
+        for c in fr.cells:
+            if c.kind == "code" and _has_visible_state(c):
+                c.stale = True
+
+    def stale_code_indices(self, path: Path) -> list[int]:
+        fr = self._files.get(path)
+        if fr is None:
+            return []
+        return [i for i, c in enumerate(fr.cells) if c.kind == "code" and c.stale]
+
     def set_cell_status(self, path: Path, cell_index: int, status: str) -> None:
         fr = self._files.get(path)
         if fr is None or not (0 <= cell_index < len(fr.cells)):
@@ -147,6 +178,7 @@ def _cell_view(c: CellRecord) -> dict[str, Any]:
     browser can render the prose; for code cells we keep it server-side."""
     view: dict[str, Any] = {
         "kind": c.kind,
+        "source_hash": c.source_hash,
         "outputs": c.outputs,
         "stale": c.stale,
         "execution_count": c.execution_count,
@@ -155,3 +187,7 @@ def _cell_view(c: CellRecord) -> dict[str, Any]:
     if c.kind == "markdown":
         view["source"] = c.source
     return view
+
+
+def _has_visible_state(c: CellRecord) -> bool:
+    return bool(c.outputs) or c.execution_count is not None or c.status in {"running", "done", "error"}
