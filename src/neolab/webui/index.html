@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>neolab</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>neolab</h1>
+    <div class="meta">
+      <span id="path" class="path">(no file)</span>
+      <span id="kernel-status" class="kernel-status" data-state="idle">idle</span>
+    </div>
+  </header>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">files</span>
+        <span id="tree-root" class="sidebar-root"></span>
+      </div>
+      <div id="tree" class="tree"></div>
+    </aside>
+    <main id="cells" class="cells"></main>
+  </div>
+  <script type="module" src="/static/main.js"></script>
+</body>
+</html>

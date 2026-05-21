@@ -1,0 +1,73 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "neolab"
+version = "0.0.1"
+description = "Self-contained Neovim <-> IPython workspace with a custom WebSocket protocol"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Leonardo" }]
+keywords = ["neovim", "ipython", "jupyter", "jupytext", "repl"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Text Editors",
+]
+dependencies = [
+    "aiohttp>=3.9",
+    "ipython>=8",
+    "click>=8.1",
+    "rich>=13",
+]
+
+[project.scripts]
+neolab = "neolab.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/neolab"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-aiohttp>=1.0",
+    "ruff>=0.15",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle
+    "F",   # pyflakes
+    "W",   # warnings
+    "I",   # isort
+    "B",   # bugbear
+    "UP",  # pyupgrade
+    "SIM", # simplify
+]
+ignore = [
+    "E501",  # line length (formatter)
+    "B008",  # function calls in defaults (click)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
