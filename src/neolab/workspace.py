@@ -190,4 +190,6 @@ def _cell_view(c: CellRecord) -> dict[str, Any]:
 
 
 def _has_visible_state(c: CellRecord) -> bool:
-    return bool(c.outputs) or c.execution_count is not None or c.status in {"running", "done", "error"}
+    return (
+        bool(c.outputs) or c.execution_count is not None or c.status in {"running", "done", "error"}
+    )

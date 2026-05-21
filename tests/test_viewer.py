@@ -61,4 +61,3 @@ def test_csv_renders_html_table_with_polars(tmp_path: Path) -> None:
     # The header note we prepend should include row/col counts
     assert "2 rows" in html
     assert "2 cols" in html
-

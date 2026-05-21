@@ -115,9 +115,7 @@ async def test_filekernel_emits_inline_matplotlib_figure():
     try:
         k.execute(
             "plot1",
-            "import matplotlib.pyplot as plt\n"
-            "plt.figure()\n"
-            "plt.plot([1, 2, 3])\n",
+            "import matplotlib.pyplot as plt\nplt.figure()\nplt.plot([1, 2, 3])\n",
         )
         await _wait_done(received, "plot1")
         displays = [m for m in received if m["type"] in {"display", "result"}]
