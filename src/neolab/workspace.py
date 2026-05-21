@@ -138,14 +138,20 @@ class Workspace:
         return {
             "path": str(path),
             "kernel_status": fr.kernel_status,
-            "cells": [
-                {
-                    "kind": c.kind,
-                    "outputs": c.outputs,
-                    "stale": c.stale,
-                    "execution_count": c.execution_count,
-                    "status": c.status,
-                }
-                for c in fr.cells
-            ],
+            "cells": [_cell_view(c) for c in fr.cells],
         }
+
+
+def _cell_view(c: CellRecord) -> dict[str, Any]:
+    """Render a CellRecord for the wire. Source ships for markdown cells so the
+    browser can render the prose; for code cells we keep it server-side."""
+    view: dict[str, Any] = {
+        "kind": c.kind,
+        "outputs": c.outputs,
+        "stale": c.stale,
+        "execution_count": c.execution_count,
+        "status": c.status,
+    }
+    if c.kind == "markdown":
+        view["source"] = c.source
+    return view

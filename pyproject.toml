@@ -32,6 +32,10 @@ dependencies = [
     "rich>=13",
 ]
 
+[project.optional-dependencies]
+# Tabular viewers (CSV, Parquet). polars only; pandas is intentionally absent.
+data = ["polars>=1.0"]
+
 [project.scripts]
 neolab = "neolab.cli:main"
 
@@ -47,6 +51,7 @@ dev = [
     "pytest>=8",
     "pytest-aiohttp>=1.0",
     "ruff>=0.15",
+    "polars>=1.0",
 ]
 
 [tool.ruff]

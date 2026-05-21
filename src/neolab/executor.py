@@ -13,10 +13,21 @@ from pathlib import Path
 from typing import Any
 
 from neolab.broadcast import Broadcast
+from neolab.disk_watcher import DiskWatcher
+from neolab.jupytext import parse as parse_jupytext
 from neolab.kernel import FileKernel
 from neolab.workspace import Workspace
 
 log = logging.getLogger(__name__)
+
+
+def _wire_cell(c: dict[str, str]) -> dict[str, Any]:
+    """Browser-facing shape for a synced cell. Markdown carries source so it
+    can be rendered without a kernel run; code keeps source server-side."""
+    view: dict[str, Any] = {"kind": c["kind"]}
+    if c["kind"] == "markdown":
+        view["source"] = c.get("source", "")
+    return view
 
 
 class Executor:
@@ -34,6 +45,11 @@ class Executor:
         self._kernel_path: Path | None = None
         self._runs: dict[str, tuple[Path, int]] = {}
         self.active_path: Path | None = None
+        self._disk_watcher: DiskWatcher | None = None
+
+    def attach_disk_watcher(self, watcher: DiskWatcher) -> None:
+        self._disk_watcher = watcher
+        watcher.set_callback(self._on_disk_change)
 
     def shutdown(self) -> None:
         if self._kernel is not None:
@@ -45,11 +61,13 @@ class Executor:
     def sync_file(self, path: Path, cells: list[dict[str, str]]) -> None:
         self.workspace.sync_cells(path, cells)
         self.active_path = path
+        if self._disk_watcher is not None:
+            self._disk_watcher.track(path)
         self.broadcast.publish(
             {
                 "type": "file_synced",
                 "path": str(path),
-                "cells": [{"kind": c["kind"]} for c in cells],
+                "cells": [_wire_cell(c) for c in cells],
             }
         )
 
@@ -102,6 +120,33 @@ class Executor:
             self._kernel_path = path
         # P1: one kernel total. Cells across files (P2) will spawn per Path.
         return self._kernel
+
+    # ------------ disk watcher ------------
+
+    def _on_disk_change(self, path: Path) -> None:
+        """Called by the disk watcher when an externally-edited file changes.
+
+        Re-reads from disk, re-parses cells, and broadcasts file_synced if the
+        cell list differs from what we already have. Idempotent — if nvim has
+        already pushed the same content (via autoread + BufReadPost), this
+        becomes a no-op.
+        """
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as e:
+            log.debug("disk_watcher: could not read %s: %s", path, e)
+            return
+        parsed = parse_jupytext(text)
+        new_cells = [{"kind": c.kind, "source": c.source} for c in parsed]
+
+        fr = self.workspace.file(path)
+        same = len(fr.cells) == len(new_cells) and all(
+            old.kind == new["kind"] and old.source == new["source"]
+            for old, new in zip(fr.cells, new_cells, strict=False)
+        )
+        if same:
+            return
+        self.sync_file(path, new_cells)
 
     def _on_kernel_event(self, ev: dict[str, Any]) -> None:
         et = ev["type"]

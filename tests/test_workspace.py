@@ -73,3 +73,14 @@ def test_snapshot_shape():
     snap = ws.snapshot(p)
     assert snap["path"] == str(p)
     assert [c["kind"] for c in snap["cells"]] == ["code", "markdown"]
+
+
+def test_snapshot_includes_source_for_markdown():
+    ws = Workspace()
+    p = Path("/t.py")
+    ws.sync_cells(p, _cells(("code", "x = 1"), ("markdown", "# heading\nbody")))
+    snap = ws.snapshot(p)
+    # Code cells do not ship source over the wire.
+    assert "source" not in snap["cells"][0]
+    # Markdown cells do — the browser renders them without a kernel run.
+    assert snap["cells"][1]["source"] == "# heading\nbody"

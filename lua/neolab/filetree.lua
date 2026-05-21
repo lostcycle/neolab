@@ -1,4 +1,6 @@
--- Walk the project directory and produce a tree of .py files for the UI sidebar.
+-- Walk the project directory and produce a tree of viewable files for the
+-- UI sidebar. Python files are editable; the others are read-only viewers
+-- served by the server's viewer module.
 
 local M = {}
 
@@ -16,6 +18,42 @@ local DEFAULT_EXCLUDE = {
   "dist",
   "build",
 }
+
+-- Extensions surfaced in the tree. Python files are first-class (editable);
+-- everything else is rendered by the viewer module on the server.
+local VIEWABLE_EXTS = {
+  "py",
+  "md",
+  "markdown",
+  "csv",
+  "tsv",
+  "parquet",
+  "ipynb",
+  "json",
+  "yaml",
+  "yml",
+  "toml",
+  "txt",
+  "log",
+}
+
+local function ext_of(name)
+  return name:match("%.([%w]+)$")
+end
+
+local function is_viewable(name)
+  local ext = ext_of(name)
+  if not ext then
+    return false
+  end
+  ext = ext:lower()
+  for _, e in ipairs(VIEWABLE_EXTS) do
+    if e == ext then
+      return true
+    end
+  end
+  return false
+end
 
 local function should_skip(name, excludes)
   if name:sub(1, 1) == "." then
@@ -46,7 +84,7 @@ local function walk(dir, excludes, depth, max_depth)
         if #children > 0 then
           nodes[#nodes + 1] = { type = "dir", name = name, children = children }
         end
-      elseif kind == "file" and name:match("%.py$") then
+      elseif kind == "file" and is_viewable(name) then
         nodes[#nodes + 1] = { type = "file", name = name, path = full }
       end
     end

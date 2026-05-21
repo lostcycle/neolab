@@ -5,6 +5,7 @@ from importlib import resources
 from aiohttp import web
 
 from neolab.broadcast import Broadcast
+from neolab.disk_watcher import DiskWatcher
 from neolab.executor import Executor
 from neolab.workspace import Workspace
 from neolab.ws_browser import ws_browser_handler
@@ -24,10 +25,18 @@ async def index(request: web.Request) -> web.Response:
 
 async def _on_startup(app: web.Application) -> None:
     loop = asyncio.get_running_loop()
-    app["executor"] = Executor(app["workspace"], app["broadcast"], loop)
+    executor = Executor(app["workspace"], app["broadcast"], loop)
+    watcher = DiskWatcher(loop)
+    executor.attach_disk_watcher(watcher)
+    watcher.start()
+    app["executor"] = executor
+    app["disk_watcher"] = watcher
 
 
 async def _on_cleanup(app: web.Application) -> None:
+    watcher: DiskWatcher | None = app.get("disk_watcher")
+    if watcher is not None:
+        watcher.stop()
     executor: Executor | None = app.get("executor")
     if executor is not None:
         executor.shutdown()

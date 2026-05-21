@@ -7,14 +7,17 @@ local defaults = {
   },
   keymaps = {
     execute_cell = "<leader>r",
-    execute_above = "<leader>a",
-    execute_below = "<leader>b",
-    execute_all = "<leader>A",
     clear_outputs = "<leader>R",
   },
   render = {
     virtual_line = true,
     status_signs = true,
+  },
+  cellmarks = {
+    enabled = true,
+    separator = "─",
+    max_width = 120,
+    show_index = false,
   },
   sync = {
     cursor_debounce_ms = 100,

@@ -15,8 +15,11 @@ from typing import Any
 
 from aiohttp import WSMsgType, web
 
+from neolab import viewer
 from neolab.executor import Executor
 from neolab.workspace import Workspace
+
+_EDITABLE_SUFFIXES = {".py", ".pyi"}
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +104,10 @@ async def _handle(
             )
     elif t == "select":
         path = Path(data["path"])
-        await ws.send_json({"type": "state", **workspace.snapshot(path)})
+        if path.suffix.lower() in _EDITABLE_SUFFIXES:
+            snap = workspace.snapshot(path)
+        else:
+            snap = viewer.render(path)
+        await ws.send_json({"type": "state", **snap})
     else:
         log.debug("browser ws: unknown message type: %s", t)

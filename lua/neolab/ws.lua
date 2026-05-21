@@ -265,27 +265,38 @@ function M.connect(host, port, path, handlers)
     end
   end
 
-  sock:connect(host, port, function(err)
-    if err then
-      return close_socket("connect: " .. tostring(err))
-    end
-    local key = random_key_b64()
-    local req = table.concat({
-      "GET " .. path .. " HTTP/1.1",
-      "Host: " .. host .. ":" .. tostring(port),
-      "Upgrade: websocket",
-      "Connection: Upgrade",
-      "Sec-WebSocket-Key: " .. key,
-      "Sec-WebSocket-Version: 13",
-      "",
-      "",
-    }, "\r\n")
-    sock:write(req, function(werr)
-      if werr then
-        return close_socket("write upgrade: " .. tostring(werr))
+  local function do_connect(addr)
+    sock:connect(addr, port, function(err)
+      if err then
+        return close_socket("connect: " .. tostring(err))
       end
-      sock:read_start(on_read)
+      local key = random_key_b64()
+      local req = table.concat({
+        "GET " .. path .. " HTTP/1.1",
+        "Host: " .. host .. ":" .. tostring(port),
+        "Upgrade: websocket",
+        "Connection: Upgrade",
+        "Sec-WebSocket-Key: " .. key,
+        "Sec-WebSocket-Version: 13",
+        "",
+        "",
+      }, "\r\n")
+      sock:write(req, function(werr)
+        if werr then
+          return close_socket("write upgrade: " .. tostring(werr))
+        end
+        sock:read_start(on_read)
+      end)
     end)
+  end
+
+  -- libuv's tcp:connect requires a numeric IP — resolve hostnames first.
+  -- getaddrinfo accepts IP literals too, so this works uniformly for both.
+  uv.getaddrinfo(host, nil, { family = "inet", socktype = "stream" }, function(err, addrs)
+    if err or not addrs or #addrs == 0 then
+      return close_socket("dns: " .. tostring(err or ("no address for " .. host)))
+    end
+    do_connect(addrs[1].addr)
   end)
 
   return self

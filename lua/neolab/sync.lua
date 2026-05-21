@@ -11,6 +11,8 @@ local uv = vim.uv or vim.loop
 
 ---@type table<integer, userdata>
 local buffer_timers = {}
+---@type table<integer, userdata>
+local fs_watchers = {}
 ---@type userdata|nil
 local cursor_timer = nil
 
@@ -100,6 +102,65 @@ function M.send_tree()
   client.send({ type = "tree", root = snap.root, nodes = snap.nodes })
 end
 
+local function start_fs_watcher(buf, path)
+  -- Detect external edits (coding agents, git checkouts, other editors) and
+  -- pull them into the buffer via :checktime so BufReadPost re-syncs cells.
+  if not path then
+    return
+  end
+  if fs_watchers[buf] then
+    pcall(function()
+      fs_watchers[buf]:stop()
+    end)
+    pcall(function()
+      fs_watchers[buf]:close()
+    end)
+    fs_watchers[buf] = nil
+  end
+  local handle = uv.new_fs_event()
+  if not handle then
+    return
+  end
+  local ok = pcall(function()
+    handle:start(
+      path,
+      {},
+      vim.schedule_wrap(function(err)
+        if err then
+          return
+        end
+        if not vim.api.nvim_buf_is_valid(buf) then
+          return
+        end
+        vim.bo[buf].autoread = true
+        pcall(vim.api.nvim_buf_call, buf, function()
+          vim.cmd("checktime")
+        end)
+      end)
+    )
+  end)
+  if ok then
+    fs_watchers[buf] = handle
+  else
+    pcall(function()
+      handle:close()
+    end)
+  end
+end
+
+local function stop_fs_watcher(buf)
+  local h = fs_watchers[buf]
+  if h then
+    pcall(function()
+      h:stop()
+    end)
+    pcall(function()
+      h:close()
+    end)
+    fs_watchers[buf] = nil
+  end
+end
+
 ---@param buf integer
 function M.attach(buf)
   local group = vim.api.nvim_create_augroup("neolab-sync-" .. buf, { clear = true })
@@ -109,6 +170,7 @@ function M.attach(buf)
     buffer = buf,
     callback = function()
       send_sync(buf)
+      start_fs_watcher(buf, buf_path(buf))
     end,
   })
 
@@ -128,6 +190,29 @@ function M.attach(buf)
     end,
   })
 
+  -- When :checktime pulls in external changes, this fires; re-sync cells.
+  vim.api.nvim_create_autocmd("FileChangedShellPost", {
+    group = group,
+    buffer = buf,
+    callback = function()
+      send_sync(buf)
+    end,
+  })
+
+  -- Belt-and-suspenders: re-check on focus/idle in case fs_event missed an edit.
+  vim.api.nvim_create_autocmd({ "FocusGained", "BufEnter", "CursorHold" }, {
+    group = group,
+    buffer = buf,
+    callback = function()
+      if vim.api.nvim_buf_is_valid(buf) then
+        vim.bo[buf].autoread = true
+        pcall(vim.api.nvim_buf_call, buf, function()
+          vim.cmd("checktime")
+        end)
+      end
+    end,
+  })
+
   vim.api.nvim_create_autocmd("BufWipeout", {
     group = group,
     buffer = buf,
@@ -142,12 +227,17 @@ function M.attach(buf)
         end)
         buffer_timers[buf] = nil
       end
+      stop_fs_watcher(buf)
     end,
   })
 
   vim.schedule(function()
+    if vim.api.nvim_buf_is_valid(buf) then
+      vim.bo[buf].autoread = true
+    end
     send_sync(buf)
     send_cursor(buf)
+    start_fs_watcher(buf, buf_path(buf))
   end)
 end
 

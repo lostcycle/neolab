@@ -6,9 +6,10 @@ import { renderTree, setActiveFile } from "./tree.js";
 
 const state = {
   activePath: null,
-  cells: [], // [{ kind, outputs, status, execution_count, stale }]
+  cells: [], // [{ kind, source, outputs, status, execution_count, stale }]
   tree: null, // { root, nodes }
   activeCellIndex: null,
+  kernelStatus: "idle",
 };
 
 const $path = document.getElementById("path");
@@ -17,19 +18,25 @@ const $cells = document.getElementById("cells");
 const $tree = document.getElementById("tree");
 const $treeRoot = document.getElementById("tree-root");
 
+function newCell(c) {
+  return {
+    kind: c.kind,
+    source: c.source || "",
+    outputs: c.outputs || [],
+    status: c.status || "idle",
+    execution_count: c.execution_count ?? null,
+    stale: !!c.stale,
+  };
+}
+
 function ensureCell(index, kind = "code") {
   while (state.cells.length <= index) {
-    state.cells.push({
-      kind,
-      outputs: [],
-      status: "idle",
-      execution_count: null,
-      stale: false,
-    });
+    state.cells.push(newCell({ kind }));
   }
 }
 
 function setKernelStatus(s) {
+  state.kernelStatus = s;
   $kstat.textContent = s;
   $kstat.dataset.state = s;
 }
@@ -62,7 +69,7 @@ function scrollToCell(index) {
   state.activeCellIndex = index;
   applyActiveCellHighlight();
   const target = $cells.querySelector(`.cell[data-cell-index="${index}"]`);
-  if (target) target.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (target) target.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function renderTreeNow() {
@@ -78,17 +85,35 @@ function renderTreeNow() {
   });
 }
 
+function mergeIncomingCells(incoming) {
+  // Preserve prior outputs/status for cells whose kind+source still match;
+  // markdown cells refresh their source verbatim.
+  const next = incoming.map((c, i) => {
+    const prior = state.cells[i];
+    if (
+      prior &&
+      prior.kind === c.kind &&
+      (c.kind === "markdown" || prior.source === (c.source || ""))
+    ) {
+      return {
+        kind: c.kind,
+        source: c.source || prior.source || "",
+        outputs: prior.outputs,
+        status: prior.status,
+        execution_count: prior.execution_count,
+        stale: prior.stale,
+      };
+    }
+    return newCell(c);
+  });
+  state.cells = next;
+}
+
 function applyEvent(ev) {
   switch (ev.type) {
     case "state": {
       state.activePath = ev.path;
-      state.cells = (ev.cells || []).map((c) => ({
-        kind: c.kind,
-        outputs: c.outputs || [],
-        status: c.status || "idle",
-        execution_count: c.execution_count ?? null,
-        stale: !!c.stale,
-      }));
+      state.cells = (ev.cells || []).map(newCell);
       setKernelStatus(ev.kernel_status || "idle");
       renderAll();
       setActiveFile($tree, state.activePath);
@@ -97,29 +122,9 @@ function applyEvent(ev) {
     case "file_synced": {
       if (state.activePath !== ev.path) {
         state.activePath = ev.path;
-        state.cells = (ev.cells || []).map((c) => ({
-          kind: c.kind,
-          outputs: [],
-          status: "idle",
-          execution_count: null,
-          stale: false,
-        }));
+        state.cells = (ev.cells || []).map(newCell);
       } else {
-        const incoming = ev.cells || [];
-        incoming.forEach((c, i) => {
-          if (i >= state.cells.length) {
-            state.cells.push({
-              kind: c.kind,
-              outputs: [],
-              status: "idle",
-              execution_count: null,
-              stale: false,
-            });
-          } else {
-            state.cells[i].kind = c.kind;
-          }
-        });
-        state.cells.length = incoming.length;
+        mergeIncomingCells(ev.cells || []);
       }
       renderAll();
       setActiveFile($tree, state.activePath);

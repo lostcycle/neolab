@@ -1,5 +1,6 @@
 local M = {}
 
+local cellmarks = require("neolab.cellmarks")
 local client = require("neolab.client")
 local commands = require("neolab.commands")
 local config = require("neolab.config")
@@ -15,12 +16,14 @@ local function attach(buf)
   _attached[buf] = true
   keymaps.apply(buf)
   sync.attach(buf)
+  cellmarks.attach(buf)
 end
 
 ---@param opts table|nil
 function M.setup(opts)
   config.apply(opts or {})
   commands.register()
+  cellmarks.setup()
 
   vim.api.nvim_create_autocmd("FileType", {
     pattern = "python",
