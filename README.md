@@ -46,7 +46,7 @@ specs live):
 
 ```lua
 return {
-  "<your-gh-user>/neolab",
+  "lostcycle/neolab",
   ft = "python",
   cmd = {
     "NeolabPing",
@@ -78,7 +78,7 @@ tag, lazy tracks the default branch.
 
 ```lua
 return {
-  "<your-gh-user>/neolab",
+  "lostcycle/neolab",
   ft = "python",
   build = "uv tool install --force .",   -- or: pipx install --force .
   cmd = {
